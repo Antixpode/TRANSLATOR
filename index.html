@@ -88,8 +88,25 @@
         </button>
       </div>
 
-    </div>
   </header>
+
+  <!-- BANNIÈRE D'INSTALLATION PWA (ANDROID / CHROME) -->
+  <aside id="pwa-install-banner" class="hidden w-full max-w-2xl mx-auto px-4 pt-3 transition-all" aria-label="Installer l'application">
+    <div class="flex items-center justify-between p-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-lg shadow-indigo-500/25">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-xl shrink-0">
+          📱
+        </div>
+        <div>
+          <p class="text-xs sm:text-sm font-bold leading-tight">Installer l'application sur le téléphone</p>
+          <p class="text-[11px] text-indigo-100">Accès direct avec icône sur votre écran d'accueil</p>
+        </div>
+      </div>
+      <button id="btn-install-pwa" type="button" class="shrink-0 ml-2 px-3.5 py-2 rounded-xl bg-white text-indigo-700 font-bold text-xs shadow-sm hover:bg-indigo-50 active:scale-95 transition">
+        Installer
+      </button>
+    </div>
+  </aside>
 
   <!-- CONTENU PRINCIPAL (SCROLLABLE) -->
   <main class="flex-1 overflow-y-auto px-4 sm:px-6 py-4 pb-36">
@@ -251,7 +268,7 @@
   </nav>
 
   <!-- SERVICE WORKER REGISTRATION & APP SCRIPT -->
-  <script src="app.js?v=4"></script>
+  <script src="app.js?v=5"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {

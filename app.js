@@ -676,5 +676,37 @@ function escapeForAttr(str) {
   return str.replace(/'/g, "\\'").replace(/"/g, '&quot;');
 }
 
+// --- INSTALLATION PWA SUR ANDROID ---
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  const banner = document.getElementById('pwa-install-banner');
+  if (banner) {
+    banner.classList.remove('hidden');
+  }
+});
+
+const btnInstall = document.getElementById('btn-install-pwa');
+if (btnInstall) {
+  btnInstall.addEventListener('click', async () => {
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      const choiceResult = await deferredInstallPrompt.userChoice;
+      if (choiceResult.outcome === 'accepted') {
+        const banner = document.getElementById('pwa-install-banner');
+        if (banner) banner.classList.add('hidden');
+      }
+      deferredInstallPrompt = null;
+    }
+  });
+}
+
+window.addEventListener('appinstalled', () => {
+  const banner = document.getElementById('pwa-install-banner');
+  if (banner) banner.classList.add('hidden');
+  showAlert('Application installée avec succès sur votre écran d\'accueil !', 'info');
+});
+
 // Exposer globalement speakText pour les onclicks inline dans l'historique
 window.speakText = speakText;
