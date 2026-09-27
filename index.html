@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="fr" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Vocalis | Traducteur Vocal Néerlandais ⇄ Français</title>
+  
+  <!-- SEO & PWA Meta Tags -->
+  <meta name="description" content="Application de traduction vocale instantanée bidirectionnelle Néerlandais - Français en temps réel, gratuite et sans clé d'API.">
+  <meta name="theme-color" content="#4f46e5" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Vocalis NL-FR">
+  <link rel="manifest" href="manifest.json">
+
+  <!-- Polices modernes -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Styles personnalisés & animations -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="h-full bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans antialiased transition-colors duration-200 flex flex-col select-none">
+
+  <!-- BANNIÈRE D'ALERTE / NOTIFICATION -->
+  <div id="alert-box" class="hidden fixed top-4 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-md p-3.5 rounded-2xl bg-slate-900/90 text-white dark:bg-white/95 dark:text-slate-900 backdrop-blur-md shadow-xl text-xs sm:text-sm font-medium flex items-center justify-between transition-all">
+    <span id="alert-message">Notification</span>
+    <button onclick="document.getElementById('alert-box').classList.add('hidden')" class="p-1 opacity-70 hover:opacity-100">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+    </button>
+  </div>
+
+  <!-- HEADER -->
+  <header class="sticky top-0 z-40 w-full backdrop-blur-md bg-white/80 dark:bg-slate-900/80 border-b border-slate-200/80 dark:border-slate-800/80 px-4 sm:px-6 py-3.5 transition-colors">
+    <div class="max-w-2xl mx-auto flex items-center justify-between">
+      
+      <!-- Logo & Titre -->
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-base font-bold tracking-tight">Vocalis <span class="text-indigo-600 dark:text-indigo-400">NL ⇄ FR</span></h1>
+          <p class="text-[11px] text-slate-500 dark:text-slate-400">Traduction vocale instantanée</p>
+        </div>
+      </div>
+
+      <!-- Actions Header -->
+      <div class="flex items-center gap-2">
+        <!-- État micro / réseau -->
+        <div id="status-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+          <span id="status-text">Prêt</span>
+        </div>
+
+        <!-- Bouton Thème Clair/Sombre -->
+        <button id="btn-theme-toggle" class="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition" title="Basculer le thème" aria-label="Thème sombre ou clair">
+          <svg class="w-5 h-5 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+          <svg class="w-5 h-5 block dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- CONTENU PRINCIPAL (SCROLLABLE) -->
+  <main class="flex-1 overflow-y-auto px-4 sm:px-6 py-4 pb-36">
+    <div class="max-w-2xl mx-auto space-y-4">
+
+      <!-- SÉLECTION DU MODE (2 GRANDES SECTIONS) -->
+      <section class="flex items-center gap-2" aria-label="Choix du sens de traduction">
+        
+        <!-- Option A: Écouter NL -> Traduire en FR -->
+        <button id="card-mode-nl-fr" class="flex-1 p-3.5 sm:p-4 rounded-2xl border-2 border-indigo-600 bg-indigo-50/70 dark:bg-indigo-950/40 text-left transition shadow-sm" type="button">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xl">🇳🇱 ➜ 🇫🇷</span>
+            <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-indigo-200/60 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">Écoute NL</span>
+          </div>
+          <p class="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-100 leading-tight">Écouter du Néerlandais</p>
+          <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Traduire en Français direct</p>
+        </button>
+
+        <!-- Bouton Bascule Rapide (Inversion) -->
+        <button id="btn-switch-mode" class="p-3 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-indigo-600 hover:scale-105 active:scale-95 transition shadow-sm" title="Inverser les langues" aria-label="Inverser les langues">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
+        </button>
+
+        <!-- Option B: Parler FR -> Traduire en NL -->
+        <button id="card-mode-fr-nl" class="flex-1 p-3.5 sm:p-4 rounded-2xl border-2 border-transparent bg-white/60 dark:bg-slate-800/60 text-left transition hover:border-slate-300 dark:hover:border-slate-700 opacity-70 hover:opacity-100 shadow-sm" type="button">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xl">🇫🇷 ➜ 🇳🇱</span>
+            <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-200/60 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300">Parler FR</span>
+          </div>
+          <p class="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-100 leading-tight">Parler en Français</p>
+          <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Traduire en Néerlandais</p>
+        </button>
+
+      </section>
+
+      <!-- ZONE CENTRALE : FLUX EN DIRECT ("LIVE STREAM") -->
+      <section id="live-stream-box" class="relative rounded-3xl p-5 sm:p-6 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800/90 shadow-xl shadow-slate-200/50 dark:shadow-none min-h-[220px] flex flex-col justify-between overflow-hidden">
+        
+        <!-- En-tête du flux en direct -->
+        <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-3 mb-3">
+          <div class="flex items-center gap-2">
+            <span id="current-direction-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+              NL ➜ FR
+            </span>
+            <span class="text-xs font-medium text-slate-400 dark:text-slate-400">Flux en direct</span>
+          </div>
+
+          <!-- Animation ondes sonores quand le micro écoute -->
+          <div id="sound-waves" class="hidden flex items-center gap-1 h-5 text-indigo-600 dark:text-indigo-400">
+            <span class="wave-bar"></span>
+            <span class="wave-bar"></span>
+            <span class="wave-bar"></span>
+            <span class="wave-bar"></span>
+            <span class="wave-bar"></span>
+            <span class="wave-bar"></span>
+          </div>
+        </div>
+
+        <!-- Placeholder quand rien n'est encore prononcé -->
+        <div id="live-placeholder" class="my-auto py-8 text-center text-slate-400 dark:text-slate-400 text-sm sm:text-base font-medium">
+          🇳🇱 Parlez en néerlandais...
+        </div>
+
+        <!-- Conteneur de transcription & traduction en cours -->
+        <div id="live-speech-container" class="hidden space-y-4 my-auto">
+          
+          <!-- Texte vocal source reconnu (interim & final) -->
+          <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-400 block mb-1">Voix captée</span>
+            <p id="live-speech-source" class="text-base sm:text-lg leading-relaxed text-slate-700 dark:text-slate-200">
+              <!-- Rempli en temps réel -->
+            </p>
+          </div>
+
+          <!-- Texte traduit instantanément -->
+          <div class="p-4 rounded-2xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/60">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Traduction instantanée</span>
+              <span id="live-translating-indicator" class="opacity-0 text-[10px] font-semibold text-indigo-500 animate-pulse transition-opacity">Traduction...</span>
+            </div>
+            <p id="live-speech-target" class="text-lg sm:text-2xl font-bold tracking-tight text-indigo-950 dark:text-indigo-100 leading-snug">
+              <!-- Rempli en temps réel -->
+            </p>
+          </div>
+
+        </div>
+
+        <!-- Outils d'action rapide sur le résultat courant -->
+        <div class="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800/80 mt-3">
+          <div class="flex items-center gap-1.5">
+            <!-- Bouton Prononciation TTS -->
+            <button id="btn-speak-current" class="hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Écouter la traduction">
+              <svg class="w-4 h-4 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
+              <span>Écouter</span>
+            </button>
+            
+            <!-- Bouton Copier -->
+            <button id="btn-copy-current" class="hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Copier le texte traduit">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+              <span>Copier</span>
+            </button>
+          </div>
+
+          <!-- Bouton Lecture vocale automatique (Auto-TTS) -->
+          <button id="btn-toggle-tts" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 transition" title="Activer la lecture vocale automatique des traductions">
+            <svg id="tts-toggle-icon" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 10a3 3 0 010 4m3-6a7 7 0 010 8"/></svg>
+            <span>Auto-Voix</span>
+          </button>
+        </div>
+
+      </section>
+
+      <!-- HISTORIQUE DES ÉCHANGES -->
+      <section id="history-container" class="space-y-3 pt-2">
+        <div class="flex items-center justify-between px-1">
+          <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-400">Historique des échanges</h2>
+          <button id="btn-clear-history" class="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-rose-500 transition">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            <span>Effacer</span>
+          </button>
+        </div>
+
+        <!-- Liste des messages passés -->
+        <div id="history-list" class="space-y-2.5">
+          <!-- Injecté dynamiquement par JavaScript -->
+        </div>
+
+        <div id="history-empty-notice" class="p-6 text-center rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-400 text-xs">
+          Aucun échange enregistré. Commencez à parler pour alimenter le journal.
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- BARRE DE CONTRÔLE FLOTTANTE (ERGONOMIE MOBILE BAS D'ÉCRAN) -->
+  <nav class="fixed bottom-0 left-0 right-0 z-40 backdrop-blur-xl bg-white/90 dark:bg-slate-900/90 border-t border-slate-200/80 dark:border-slate-800/80 px-4 py-3.5 pb-6 sm:pb-4 transition-colors">
+    <div class="max-w-md mx-auto flex items-center justify-center gap-4">
+
+      <!-- Bouton Principal Micro (Tactile Large) -->
+      <div class="relative flex items-center justify-center">
+        <!-- Anneau d'animation pulsée -->
+        <div id="mic-pulse-ring" class="hidden absolute inset-0 -m-2 rounded-full bg-rose-500/25 animate-pulse-ring"></div>
+
+        <button 
+          id="btn-toggle-listen" 
+          type="button"
+          class="relative flex items-center justify-center gap-2.5 px-7 py-4 rounded-full bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold text-base shadow-lg shadow-indigo-500/25 transition duration-150"
+          aria-label="Démarrer ou arrêter l'écoute vocale"
+        >
+          <svg id="btn-listen-icon" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+          </svg>
+          <span id="btn-listen-text">Démarrer l'écoute</span>
+        </button>
+      </div>
+
+    </div>
+  </nav>
+
+  <!-- SERVICE WORKER REGISTRATION & APP SCRIPT -->
+  <script src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(err => console.log('SW error:', err));
+      });
+    }
+  </script>
+</body>
+</html>
