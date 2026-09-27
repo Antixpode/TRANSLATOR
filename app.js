@@ -16,7 +16,10 @@ const state = {
   history: [],
   debounceTimer: null,
   recognition: null,
-  shouldKeepListening: false
+  shouldKeepListening: false,
+  lastProcessedIndex: 0,
+  lastFinalText: '',
+  lastFinalTime: 0
 };
 
 // Configuration des langues
@@ -123,6 +126,7 @@ function initSpeechRecognition() {
 
     state.recognition.onstart = () => {
       state.isListening = true;
+      state.lastProcessedIndex = 0;
       updateListenButtonUI(true);
       updateStatus('listening', 'Écoute active...');
       elements.soundWaves.classList.remove('hidden');
@@ -131,18 +135,26 @@ function initSpeechRecognition() {
 
     state.recognition.onresult = (event) => {
       let interim = '';
-      let final = '';
+      let newFinal = '';
 
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          final += transcript;
+      for (let i = 0; i < event.results.length; ++i) {
+        const item = event.results[i];
+        if (!item || !item[0]) continue;
+        const text = item[0].transcript;
+
+        if (item.isFinal) {
+          // Sur Android Chrome, event.results conserve l'historique complet
+          // On ne traite que les indices non encore traités
+          if (i >= state.lastProcessedIndex) {
+            newFinal += (newFinal ? ' ' : '') + text.trim();
+            state.lastProcessedIndex = i + 1;
+          }
         } else {
-          interim += transcript;
+          interim += (interim ? ' ' : '') + text.trim();
         }
       }
 
-      handleSpeechResults(final, interim);
+      handleSpeechResults(newFinal, interim);
     };
 
     state.recognition.onerror = (event) => {
@@ -158,15 +170,20 @@ function initSpeechRecognition() {
     };
 
     state.recognition.onend = () => {
+      state.lastProcessedIndex = 0;
       // Si l'utilisateur n'a pas appuyé manuellement sur Arrêter et qu'on doit continuer l'écoute
       if (state.shouldKeepListening) {
-        try {
-          state.recognition.lang = LANG_CONFIG[state.mode].sourceCode;
-          state.recognition.start();
-          return;
-        } catch (e) {
-          console.log('Restart recognition catch:', e);
-        }
+        setTimeout(() => {
+          if (state.shouldKeepListening && state.recognition) {
+            try {
+              state.recognition.lang = LANG_CONFIG[state.mode].sourceCode;
+              state.recognition.start();
+            } catch (e) {
+              console.log('Restart recognition catch:', e);
+            }
+          }
+        }, 150);
+        return;
       }
       state.isListening = false;
       updateListenButtonUI(false);
@@ -186,31 +203,38 @@ function handleSpeechResults(finalText, interimText) {
   elements.livePlaceholder.classList.add('hidden');
   elements.liveSpeechContainer.classList.remove('hidden');
 
-  // Affichage du texte source capturé
+  // Traitement d'un segment validé (fin de phrase / pause)
   if (finalText) {
-    state.finalTranscript += (state.finalTranscript ? ' ' : '') + finalText.trim();
-  }
-  state.interimTranscript = interimText;
+    const trimmed = finalText.trim();
+    const now = Date.now();
 
-  const fullCurrentSource = (state.finalTranscript + ' ' + state.interimTranscript).trim();
+    // Protection anti-doublon spécifique à Android Chrome (qui renvoie parfois le même segment)
+    if (trimmed === state.lastFinalText && (now - state.lastFinalTime < 2000)) {
+      return;
+    }
+    state.lastFinalText = trimmed;
+    state.lastFinalTime = now;
 
-  // Mise en valeur : final en gras, interim en italique plus clair
-  elements.liveSpeechSource.innerHTML = `
-    <span class="font-medium text-slate-800 dark:text-slate-100">${escapeHtml(state.finalTranscript)}</span>
-    <span class="italic text-slate-500 dark:text-slate-400">${escapeHtml(state.interimTranscript)}</span>
-  `;
+    // Affichage du texte source validé
+    elements.liveSpeechSource.innerHTML = `
+      <span class="font-bold text-slate-900 dark:text-slate-100">${escapeHtml(trimmed)}</span>
+    `;
 
-  if (!fullCurrentSource) return;
+    // Traduction et ajout direct à l'historique
+    executeTranslation(trimmed, true);
+  } else if (interimText) {
+    const trimmedInterim = interimText.trim();
+    if (!trimmedInterim) return;
 
-  // Traduction instantanée avec debounce pour les résultats intermédiaires
-  // Si on a un texte final, traduire immédiatement
-  if (finalText) {
-    executeTranslation(fullCurrentSource, true);
-  } else {
-    // Si c'est juste de l'interim, on attend 300ms de répit pour économiser le réseau
+    // Affichage intermédiaire en cours de prononciation
+    elements.liveSpeechSource.innerHTML = `
+      <span class="italic text-slate-500 dark:text-slate-400">${escapeHtml(trimmedInterim)}</span>
+    `;
+
+    // Débunk de la traduction en direct
     clearTimeout(state.debounceTimer);
     state.debounceTimer = setTimeout(() => {
-      executeTranslation(fullCurrentSource, false);
+      executeTranslation(trimmedInterim, false);
     }, 280);
   }
 }
@@ -239,10 +263,6 @@ async function executeTranslation(text, isFinal) {
       if (state.autoTTS) {
         speakText(translated, cfg.targetCode);
       }
-
-      // Réinitialisation du tampon courant pour le prochain segment
-      state.finalTranscript = '';
-      state.interimTranscript = '';
     }
   } catch (error) {
     console.error('Translation error:', error);
@@ -332,6 +352,7 @@ function startListening() {
 
 function stopListening() {
   state.shouldKeepListening = false;
+  state.lastProcessedIndex = 0;
   if (state.recognition) {
     try {
       state.recognition.stop();
