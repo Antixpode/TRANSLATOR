@@ -12,6 +12,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Vocalis NL-FR">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="manifest" href="manifest.json">
 
   <!-- Polices modernes -->
@@ -62,11 +64,7 @@
       
       <!-- Logo & Titre -->
       <div class="flex items-center gap-2.5">
-        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
-          </svg>
-        </div>
+        <img src="logo.png" alt="Antipode Logo" class="w-9 h-9 rounded-xl shadow-sm object-contain border border-slate-200/60 dark:border-slate-700/60">
         <div>
           <h1 class="text-base font-bold tracking-tight">Vocalis <span class="text-indigo-600 dark:text-indigo-400">NL ⇄ FR</span></h1>
           <p class="text-[11px] text-slate-500 dark:text-slate-400">Traduction vocale instantanée</p>
@@ -94,9 +92,7 @@
   <aside id="pwa-install-banner" class="hidden w-full max-w-2xl mx-auto px-4 pt-3 transition-all" aria-label="Installer l'application">
     <div class="flex items-center justify-between p-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-lg shadow-indigo-500/25">
       <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-xl shrink-0">
-          📱
-        </div>
+        <img src="logo.png" alt="Logo" class="w-10 h-10 rounded-xl shadow-sm shrink-0 object-contain">
         <div>
           <p class="text-xs sm:text-sm font-bold leading-tight">Installer l'application sur le téléphone</p>
           <p class="text-[11px] text-indigo-100">Accès direct avec icône sur votre écran d'accueil</p>
@@ -268,7 +264,7 @@
   </nav>
 
   <!-- SERVICE WORKER REGISTRATION & APP SCRIPT -->
-  <script src="app.js?v=6"></script>
+  <script src="app.js?v=7"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {

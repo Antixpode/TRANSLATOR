@@ -1,9 +1,11 @@
-const CACHE_NAME = 'vocalis-cache-v6';
+const CACHE_NAME = 'vocalis-cache-v7';
 const ASSETS_TO_CACHE = [
   './',
   './style.css',
   './app.js',
   './manifest.json',
+  './logo.png',
+  './favicon.png',
   './icon-192.png',
   './icon-512.png'
 ];
