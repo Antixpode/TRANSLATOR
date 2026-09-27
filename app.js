@@ -15,11 +15,14 @@ const state = {
   isTranslating: false,
   history: [],
   debounceTimer: null,
+  sentenceTimer: null,
   recognition: null,
   shouldKeepListening: false,
   lastProcessedIndex: 0,
-  lastFinalText: '',
-  lastFinalTime: 0
+  lastFinalChunk: '',
+  lastFinalTime: 0,
+  pendingSourceText: '',
+  isSpeakingTTS: false
 };
 
 // Configuration des langues
@@ -134,6 +137,11 @@ function initSpeechRecognition() {
     };
 
     state.recognition.onresult = (event) => {
+      // Ignorer l'audio pendant que le téléphone prononce une traduction (anti-écho / anti-larsen)
+      if (state.isSpeakingTTS) {
+        return;
+      }
+
       let interim = '';
       let newFinal = '';
 
@@ -171,6 +179,12 @@ function initSpeechRecognition() {
 
     state.recognition.onend = () => {
       state.lastProcessedIndex = 0;
+
+      // Si une phrase était en cours d'accumulation lorsque Android coupe le micro
+      if (state.pendingSourceText.trim()) {
+        finalizeSentence();
+      }
+
       // Si l'utilisateur n'a pas appuyé manuellement sur Arrêter et qu'on doit continuer l'écoute
       if (state.shouldKeepListening) {
         setTimeout(() => {
@@ -198,50 +212,79 @@ function initSpeechRecognition() {
 }
 
 // --- GESTION DU FLUX AUDIO ET TRADUCTION ---
-function handleSpeechResults(finalText, interimText) {
+function handleSpeechResults(finalChunk, interimChunk) {
   const currentLang = LANG_CONFIG[state.mode];
   elements.livePlaceholder.classList.add('hidden');
   elements.liveSpeechContainer.classList.remove('hidden');
 
-  // Traitement d'un segment validé (fin de phrase / pause)
-  if (finalText) {
-    const trimmed = finalText.trim();
-    const now = Date.now();
-
-    // Protection anti-doublon spécifique à Android Chrome (qui renvoie parfois le même segment)
-    if (trimmed === state.lastFinalText && (now - state.lastFinalTime < 2000)) {
-      return;
+  // Si un fragment est finalisé par la reconnaissance vocale
+  if (finalChunk) {
+    const trimmed = finalChunk.trim();
+    // Anti-doublon immédiat pour le fragment (Android Chrome)
+    if (trimmed !== state.lastFinalChunk || (Date.now() - state.lastFinalTime > 1500)) {
+      state.lastFinalChunk = trimmed;
+      state.lastFinalTime = Date.now();
+      state.pendingSourceText += (state.pendingSourceText ? ' ' : '') + trimmed;
     }
-    state.lastFinalText = trimmed;
-    state.lastFinalTime = now;
+  }
 
-    // Affichage du texte source validé
+  const currentDisplaySource = (state.pendingSourceText + (interimChunk ? ' ' + interimChunk.trim() : '')).trim();
+
+  // Affichage dynamique en temps réel du texte parlé
+  if (currentDisplaySource) {
     elements.liveSpeechSource.innerHTML = `
-      <span class="font-bold text-slate-900 dark:text-slate-100">${escapeHtml(trimmed)}</span>
+      <span class="font-medium text-slate-800 dark:text-slate-100">${escapeHtml(state.pendingSourceText)}</span>
+      <span class="italic text-slate-500 dark:text-slate-400">${escapeHtml(interimChunk ? ' ' + interimChunk.trim() : '')}</span>
     `;
 
-    // Traduction et ajout direct à l'historique
-    executeTranslation(trimmed, true);
-  } else if (interimText) {
-    const trimmedInterim = interimText.trim();
-    if (!trimmedInterim) return;
-
-    // Affichage intermédiaire en cours de prononciation
-    elements.liveSpeechSource.innerHTML = `
-      <span class="italic text-slate-500 dark:text-slate-400">${escapeHtml(trimmedInterim)}</span>
-    `;
-
-    // Débunk de la traduction en direct
+    // Prévisualisation visuelle de la traduction en direct (sans synthèse vocale)
     clearTimeout(state.debounceTimer);
     state.debounceTimer = setTimeout(() => {
-      executeTranslation(trimmedInterim, false);
+      previewTranslation(currentDisplaySource);
     }, 280);
+  }
+
+  // Minuteur de silence / fin de phrase :
+  // On attend 1,2 seconde de silence naturel avant de valider la phrase complète.
+  // Tant que l'utilisateur parle ou prend de brèves respirations, le minuteur est repoussé.
+  if (state.pendingSourceText.trim()) {
+    clearTimeout(state.sentenceTimer);
+    state.sentenceTimer = setTimeout(() => {
+      finalizeSentence();
+    }, 1200);
   }
 }
 
-// --- MOTEUR DE TRADUCTION ASYNCHRONE RAPIDE (100% GRATUIT) ---
-async function executeTranslation(text, isFinal) {
+// --- PRÉVISUALISATION VISUELLE DE LA TRADUCTION EN DIRECT (SANS VOIX) ---
+async function previewTranslation(text) {
   if (!text || text.trim().length === 0) return;
+
+  const cfg = LANG_CONFIG[state.mode];
+  elements.liveTranslatingIndicator.classList.remove('opacity-0');
+  state.isTranslating = true;
+
+  try {
+    const translated = await translateWithFallback(text, cfg.sourceShort, cfg.targetShort);
+    state.currentTranslation = translated;
+    elements.liveSpeechTarget.textContent = translated;
+    elements.btnSpeakCurrent.classList.remove('hidden');
+    elements.btnCopyCurrent.classList.remove('hidden');
+  } catch (error) {
+    console.warn('Preview translation error:', error);
+  } finally {
+    state.isTranslating = false;
+    elements.liveTranslatingIndicator.classList.add('opacity-0');
+  }
+}
+
+// --- VALIDATION ET LECTURE VOCALE DE LA PHRASE COMPLÈTE ---
+async function finalizeSentence() {
+  clearTimeout(state.sentenceTimer);
+  const text = state.pendingSourceText.trim();
+  if (!text || text.length < 2) return;
+
+  // Réinitialiser le tampon pour la prochaine phrase
+  state.pendingSourceText = '';
 
   const cfg = LANG_CONFIG[state.mode];
   elements.liveTranslatingIndicator.classList.remove('opacity-0');
@@ -252,20 +295,21 @@ async function executeTranslation(text, isFinal) {
 
     state.currentTranslation = translated;
     elements.liveSpeechTarget.textContent = translated;
+    elements.liveSpeechSource.innerHTML = `
+      <span class="font-bold text-slate-900 dark:text-slate-100">${escapeHtml(text)}</span>
+    `;
     elements.btnSpeakCurrent.classList.remove('hidden');
     elements.btnCopyCurrent.classList.remove('hidden');
 
-    // Si le segment est validé (fin de phrase / pause marquée)
-    if (isFinal && text.trim().length > 1) {
-      commitToHistory(text.trim(), translated.trim(), state.mode);
-      
-      // Lecture vocale automatique si activée
-      if (state.autoTTS) {
-        speakText(translated, cfg.targetCode);
-      }
+    // Sauvegarder la phrase complète et cohérente dans l'historique
+    commitToHistory(text, translated, state.mode);
+
+    // Lecture vocale automatique de la phrase complète (fluide, sans bégaiement)
+    if (state.autoTTS) {
+      speakText(translated, cfg.targetCode);
     }
   } catch (error) {
-    console.error('Translation error:', error);
+    console.error('Final sentence error:', error);
   } finally {
     state.isTranslating = false;
     elements.liveTranslatingIndicator.classList.add('opacity-0');
@@ -309,12 +353,13 @@ async function translateWithFallback(text, src, tgt) {
   return `[Traduction indisponible pour le moment]`;
 }
 
-// --- SYNTHÈSE VOCALE (TEXT-TO-SPEECH) ---
+// --- SYNTHÈSE VOCALE (TEXT-TO-SPEECH) AVEC PROTECTION ANTI-ÉCHO ---
 function speakText(text, langCode) {
   if (!('speechSynthesis' in window) || !text) return;
 
   // Stopper toute lecture en cours
   window.speechSynthesis.cancel();
+  state.isSpeakingTTS = true;
 
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = langCode;
@@ -327,6 +372,16 @@ function speakText(text, langCode) {
   if (targetVoice) {
     utterance.voice = targetVoice;
   }
+
+  const endTTS = () => {
+    // Petit délai avant de réactiver le micro pour éviter tout larsen
+    setTimeout(() => {
+      state.isSpeakingTTS = false;
+    }, 400);
+  };
+
+  utterance.onend = endTTS;
+  utterance.onerror = endTTS;
 
   window.speechSynthesis.speak(utterance);
 }
@@ -353,6 +408,13 @@ function startListening() {
 function stopListening() {
   state.shouldKeepListening = false;
   state.lastProcessedIndex = 0;
+  clearTimeout(state.sentenceTimer);
+
+  // Si une phrase est en attente, la finaliser immédiatement
+  if (state.pendingSourceText.trim()) {
+    finalizeSentence();
+  }
+
   if (state.recognition) {
     try {
       state.recognition.stop();
@@ -385,6 +447,8 @@ function setMode(newMode) {
   }
 
   state.mode = newMode;
+  clearTimeout(state.sentenceTimer);
+  state.pendingSourceText = '';
   state.finalTranscript = '';
   state.interimTranscript = '';
   state.currentTranslation = '';
@@ -442,6 +506,8 @@ function loadHistory() {
 }
 
 function clearHistory() {
+  clearTimeout(state.sentenceTimer);
+  state.pendingSourceText = '';
   state.history = [];
   saveHistory();
   renderHistory();
