@@ -9,19 +9,14 @@ const state = {
   mode: 'nl-fr',
   isListening: false,
   autoTTS: false, // Lecture vocale automatique de la traduction
-  interimTranscript: '',
-  finalTranscript: '',
   currentTranslation: '',
   isTranslating: false,
   history: [],
   debounceTimer: null,
-  sentenceTimer: null,
   recognition: null,
   shouldKeepListening: false,
-  lastProcessedIndex: 0,
-  lastFinalChunk: '',
-  lastFinalTime: 0,
-  pendingSourceText: '',
+  currentSpokenSentence: '',
+  lastCapturedTranscript: '',
   isSpeakingTTS: false
 };
 
@@ -123,13 +118,13 @@ function initSpeechRecognition() {
 
   try {
     state.recognition = new SpeechRecognition();
-    state.recognition.continuous = true;
+    // ESSENTIEL : continuous = false élimine le bug Android Chrome de répétition des mots
+    state.recognition.continuous = false;
     state.recognition.interimResults = true;
     state.recognition.maxAlternatives = 1;
 
     state.recognition.onstart = () => {
       state.isListening = true;
-      state.lastProcessedIndex = 0;
       updateListenButtonUI(true);
       updateStatus('listening', 'Écoute active...');
       elements.soundWaves.classList.remove('hidden');
@@ -137,32 +132,41 @@ function initSpeechRecognition() {
     };
 
     state.recognition.onresult = (event) => {
-      // Ignorer l'audio pendant que le téléphone prononce une traduction (anti-écho / anti-larsen)
-      if (state.isSpeakingTTS) {
-        return;
-      }
+      // Ignorer tout son capté pendant que le téléphone parle pour éviter l'écho/larsen
+      if (state.isSpeakingTTS) return;
 
-      let interim = '';
-      let newFinal = '';
+      elements.livePlaceholder.classList.add('hidden');
+      elements.liveSpeechContainer.classList.remove('hidden');
+
+      let transcript = '';
+      let isFinal = false;
 
       for (let i = 0; i < event.results.length; ++i) {
-        const item = event.results[i];
-        if (!item || !item[0]) continue;
-        const text = item[0].transcript;
-
-        if (item.isFinal) {
-          // Sur Android Chrome, event.results conserve l'historique complet
-          // On ne traite que les indices non encore traités
-          if (i >= state.lastProcessedIndex) {
-            newFinal += (newFinal ? ' ' : '') + text.trim();
-            state.lastProcessedIndex = i + 1;
-          }
-        } else {
-          interim += (interim ? ' ' : '') + text.trim();
+        transcript += (transcript ? ' ' : '') + event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          isFinal = true;
         }
       }
 
-      handleSpeechResults(newFinal, interim);
+      const cleanTranscript = transcript.trim();
+      if (!cleanTranscript) return;
+
+      state.lastCapturedTranscript = cleanTranscript;
+
+      if (isFinal) {
+        state.currentSpokenSentence = cleanTranscript;
+        elements.liveSpeechSource.innerHTML = `
+          <span class="font-bold text-slate-900 dark:text-slate-100">${escapeHtml(cleanTranscript)}</span>
+        `;
+      } else {
+        elements.liveSpeechSource.innerHTML = `
+          <span class="italic text-slate-500 dark:text-slate-400">${escapeHtml(cleanTranscript)}</span>
+        `;
+        clearTimeout(state.debounceTimer);
+        state.debounceTimer = setTimeout(() => {
+          previewTranslation(cleanTranscript);
+        }, 220);
+      }
     };
 
     state.recognition.onerror = (event) => {
@@ -172,86 +176,55 @@ function initSpeechRecognition() {
         stopListening();
       } else if (event.error === 'network') {
         showAlert('Erreur réseau détectée pour la reconnaissance vocale.', 'warning');
-      } else if (event.error === 'no-speech') {
-        // Simple silence, rien de grave
       }
     };
 
-    state.recognition.onend = () => {
-      state.lastProcessedIndex = 0;
+    state.recognition.onend = async () => {
+      // 1. Récupération de la phrase terminée
+      const sentence = (state.currentSpokenSentence || state.lastCapturedTranscript || '').trim();
+      state.currentSpokenSentence = '';
+      state.lastCapturedTranscript = '';
 
-      // Si une phrase était en cours d'accumulation lorsque Android coupe le micro
-      if (state.pendingSourceText.trim()) {
-        finalizeSentence();
+      // 2. Traitement de la phrase (traduction + affichage + TTS)
+      if (sentence && sentence.length >= 2) {
+        await finalizeAndSpeakSentence(sentence);
       }
 
-      // Si l'utilisateur n'a pas appuyé manuellement sur Arrêter et qu'on doit continuer l'écoute
+      // 3. Relance automatique de l'écoute si l'utilisateur n'a pas appuyé sur Arrêter
       if (state.shouldKeepListening) {
-        setTimeout(() => {
-          if (state.shouldKeepListening && state.recognition) {
-            try {
-              state.recognition.lang = LANG_CONFIG[state.mode].sourceCode;
-              state.recognition.start();
-            } catch (e) {
-              console.log('Restart recognition catch:', e);
-            }
+        const restart = () => {
+          if (!state.shouldKeepListening) return;
+          // Si le téléphone est en train de lire la traduction, attendre la fin
+          if (state.isSpeakingTTS) {
+            setTimeout(restart, 200);
+            return;
           }
-        }, 150);
+          try {
+            state.recognition.lang = LANG_CONFIG[state.mode].sourceCode;
+            state.recognition.start();
+          } catch (e) {
+            setTimeout(() => {
+              if (state.shouldKeepListening) {
+                try { state.recognition.start(); } catch(err) {}
+              }
+            }, 250);
+          }
+        };
+
+        setTimeout(restart, 150);
         return;
       }
+
+      // Arrêt définitif demandé par l'utilisateur
       state.isListening = false;
       updateListenButtonUI(false);
       elements.soundWaves.classList.add('hidden');
       elements.micPulseRing.classList.add('hidden');
-      updateStatus('ready', 'En pause');
+      updateStatus('ready', 'Arrêté');
     };
   } catch (err) {
     console.error('Initialization error:', err);
     showAlert('Impossible d\'initialiser le micro : ' + err.message, 'error');
-  }
-}
-
-// --- GESTION DU FLUX AUDIO ET TRADUCTION ---
-function handleSpeechResults(finalChunk, interimChunk) {
-  const currentLang = LANG_CONFIG[state.mode];
-  elements.livePlaceholder.classList.add('hidden');
-  elements.liveSpeechContainer.classList.remove('hidden');
-
-  // Si un fragment est finalisé par la reconnaissance vocale
-  if (finalChunk) {
-    const trimmed = finalChunk.trim();
-    // Anti-doublon immédiat pour le fragment (Android Chrome)
-    if (trimmed !== state.lastFinalChunk || (Date.now() - state.lastFinalTime > 1500)) {
-      state.lastFinalChunk = trimmed;
-      state.lastFinalTime = Date.now();
-      state.pendingSourceText += (state.pendingSourceText ? ' ' : '') + trimmed;
-    }
-  }
-
-  const currentDisplaySource = (state.pendingSourceText + (interimChunk ? ' ' + interimChunk.trim() : '')).trim();
-
-  // Affichage dynamique en temps réel du texte parlé
-  if (currentDisplaySource) {
-    elements.liveSpeechSource.innerHTML = `
-      <span class="font-medium text-slate-800 dark:text-slate-100">${escapeHtml(state.pendingSourceText)}</span>
-      <span class="italic text-slate-500 dark:text-slate-400">${escapeHtml(interimChunk ? ' ' + interimChunk.trim() : '')}</span>
-    `;
-
-    // Prévisualisation visuelle de la traduction en direct (sans synthèse vocale)
-    clearTimeout(state.debounceTimer);
-    state.debounceTimer = setTimeout(() => {
-      previewTranslation(currentDisplaySource);
-    }, 280);
-  }
-
-  // Minuteur de silence / fin de phrase :
-  // On attend 1,2 seconde de silence naturel avant de valider la phrase complète.
-  // Tant que l'utilisateur parle ou prend de brèves respirations, le minuteur est repoussé.
-  if (state.pendingSourceText.trim()) {
-    clearTimeout(state.sentenceTimer);
-    state.sentenceTimer = setTimeout(() => {
-      finalizeSentence();
-    }, 1200);
   }
 }
 
@@ -277,36 +250,32 @@ async function previewTranslation(text) {
   }
 }
 
-// --- VALIDATION ET LECTURE VOCALE DE LA PHRASE COMPLÈTE ---
-async function finalizeSentence() {
-  clearTimeout(state.sentenceTimer);
-  const text = state.pendingSourceText.trim();
-  if (!text || text.length < 2) return;
-
-  // Réinitialiser le tampon pour la prochaine phrase
-  state.pendingSourceText = '';
-
+// --- VALIDATION, TRADUCTION ET LECTURE VOCALE DE LA PHRASE ---
+async function finalizeAndSpeakSentence(text) {
+  if (!text || text.trim().length === 0) return;
+  const trimmed = text.trim();
   const cfg = LANG_CONFIG[state.mode];
+
   elements.liveTranslatingIndicator.classList.remove('opacity-0');
   state.isTranslating = true;
 
   try {
-    const translated = await translateWithFallback(text, cfg.sourceShort, cfg.targetShort);
+    const translated = await translateWithFallback(trimmed, cfg.sourceShort, cfg.targetShort);
 
     state.currentTranslation = translated;
     elements.liveSpeechTarget.textContent = translated;
     elements.liveSpeechSource.innerHTML = `
-      <span class="font-bold text-slate-900 dark:text-slate-100">${escapeHtml(text)}</span>
+      <span class="font-bold text-slate-900 dark:text-slate-100">${escapeHtml(trimmed)}</span>
     `;
     elements.btnSpeakCurrent.classList.remove('hidden');
     elements.btnCopyCurrent.classList.remove('hidden');
 
-    // Sauvegarder la phrase complète et cohérente dans l'historique
-    commitToHistory(text, translated, state.mode);
+    // Sauvegarder la phrase complète et propre dans l'historique
+    commitToHistory(trimmed, translated, state.mode);
 
-    // Lecture vocale automatique de la phrase complète (fluide, sans bégaiement)
+    // Lecture vocale automatique de la phrase complète
     if (state.autoTTS) {
-      speakText(translated, cfg.targetCode);
+      await speakTextAsync(translated, cfg.targetCode);
     }
   } catch (error) {
     console.error('Final sentence error:', error);
@@ -353,37 +322,49 @@ async function translateWithFallback(text, src, tgt) {
   return `[Traduction indisponible pour le moment]`;
 }
 
-// --- SYNTHÈSE VOCALE (TEXT-TO-SPEECH) AVEC PROTECTION ANTI-ÉCHO ---
+// --- SYNTHÈSE VOCALE AVEC PROMESSE ET PROTECTION ANTI-ÉCHO ---
+function speakTextAsync(text, langCode) {
+  return new Promise((resolve) => {
+    if (!('speechSynthesis' in window) || !text) {
+      resolve();
+      return;
+    }
+
+    // Stopper toute lecture en cours
+    window.speechSynthesis.cancel();
+    state.isSpeakingTTS = true;
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = langCode;
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    const voices = window.speechSynthesis.getVoices();
+    const targetVoice = voices.find(v => v.lang.startsWith(langCode.substring(0, 2)));
+    if (targetVoice) {
+      utterance.voice = targetVoice;
+    }
+
+    let finished = false;
+    const endTTS = () => {
+      if (finished) return;
+      finished = true;
+      setTimeout(() => {
+        state.isSpeakingTTS = false;
+        resolve();
+      }, 350);
+    };
+
+    utterance.onend = endTTS;
+    utterance.onerror = endTTS;
+    setTimeout(endTTS, 10000); // Sécurité timeout
+
+    window.speechSynthesis.speak(utterance);
+  });
+}
+
 function speakText(text, langCode) {
-  if (!('speechSynthesis' in window) || !text) return;
-
-  // Stopper toute lecture en cours
-  window.speechSynthesis.cancel();
-  state.isSpeakingTTS = true;
-
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = langCode;
-  utterance.rate = 1.0;
-  utterance.pitch = 1.0;
-
-  // Tenter de sélectionner une voix naturelle appropriée
-  const voices = window.speechSynthesis.getVoices();
-  const targetVoice = voices.find(v => v.lang.startsWith(langCode.substring(0, 2)));
-  if (targetVoice) {
-    utterance.voice = targetVoice;
-  }
-
-  const endTTS = () => {
-    // Petit délai avant de réactiver le micro pour éviter tout larsen
-    setTimeout(() => {
-      state.isSpeakingTTS = false;
-    }, 400);
-  };
-
-  utterance.onend = endTTS;
-  utterance.onerror = endTTS;
-
-  window.speechSynthesis.speak(utterance);
+  return speakTextAsync(text, langCode);
 }
 
 // --- CONTRÔLES AUDIO ET ÉCOUTE ---
@@ -394,10 +375,11 @@ function startListening() {
   }
 
   try {
-    // Vibration haptique sur mobile
     if (navigator.vibrate) navigator.vibrate(40);
 
     state.shouldKeepListening = true;
+    state.currentSpokenSentence = '';
+    state.lastCapturedTranscript = '';
     state.recognition.lang = LANG_CONFIG[state.mode].sourceCode;
     state.recognition.start();
   } catch (e) {
@@ -407,13 +389,8 @@ function startListening() {
 
 function stopListening() {
   state.shouldKeepListening = false;
-  state.lastProcessedIndex = 0;
-  clearTimeout(state.sentenceTimer);
-
-  // Si une phrase est en attente, la finaliser immédiatement
-  if (state.pendingSourceText.trim()) {
-    finalizeSentence();
-  }
+  state.currentSpokenSentence = '';
+  state.lastCapturedTranscript = '';
 
   if (state.recognition) {
     try {
@@ -422,6 +399,12 @@ function stopListening() {
       console.warn('stopListening catch:', e);
     }
   }
+
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.cancel();
+  }
+  state.isSpeakingTTS = false;
+
   state.isListening = false;
   updateListenButtonUI(false);
   elements.soundWaves.classList.add('hidden');
@@ -447,10 +430,8 @@ function setMode(newMode) {
   }
 
   state.mode = newMode;
-  clearTimeout(state.sentenceTimer);
-  state.pendingSourceText = '';
-  state.finalTranscript = '';
-  state.interimTranscript = '';
+  state.currentSpokenSentence = '';
+  state.lastCapturedTranscript = '';
   state.currentTranslation = '';
 
   updateUIForCurrentMode();
@@ -506,16 +487,14 @@ function loadHistory() {
 }
 
 function clearHistory() {
-  clearTimeout(state.sentenceTimer);
-  state.pendingSourceText = '';
+  state.currentSpokenSentence = '';
+  state.lastCapturedTranscript = '';
+  state.currentTranslation = '';
   state.history = [];
   saveHistory();
   renderHistory();
 
   // Réinitialiser la vue direct
-  state.finalTranscript = '';
-  state.interimTranscript = '';
-  state.currentTranslation = '';
   elements.liveSpeechContainer.classList.add('hidden');
   elements.livePlaceholder.classList.remove('hidden');
   elements.btnSpeakCurrent.classList.add('hidden');
